@@ -1,0 +1,1 @@
+docker buildx build --platform=linux/amd64 --pull --rm -f "7.4/Dockerfile" -t legalthings-apache-php:latest .

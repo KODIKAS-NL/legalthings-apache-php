@@ -1,5 +1,12 @@
-FROM php:7.4-apache
-MAINTAINER Sven Stam <sven@legalthings.io>
+FROM php:7.4-apache-bullseye
+LABEL maintainer="Jeroen Versteege <jeroen@kodikas.nl>"
+
+# Install latest packages to fix a bunch of security vulnerabilities.
+RUN apt-get update \
+    && apt-get -y upgrade \
+    && apt-get -y dist-upgrade \
+    && apt-get autoremove -y --purge \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN apt-get update && apt-get install -y \
         libssl-dev \
@@ -8,7 +15,7 @@ RUN apt-get update && apt-get install -y \
         libmcrypt-dev \
         libpng-dev \
         zlib1g-dev \
-	    libzip-dev \
+        libzip-dev \
         libicu-dev \
         g++ \
         libbase58-dev \
@@ -22,7 +29,10 @@ RUN apt-get update && apt-get install -y \
     && docker-php-ext-install intl gettext zip bcmath
 
 RUN a2enmod rewrite
-RUN pecl install mongodb && pecl install base58-0.1.3 && pecl install yaml && docker-php-ext-enable mongodb base58 yaml
+RUN pecl install mongodb-1.7.4 
+RUN pecl install base58-0.1.3 
+RUN pecl install yaml-2.0.4
+RUN docker-php-ext-enable mongodb base58 yaml
 
 RUN apt-get install -y libsodium-dev
 
