@@ -43,3 +43,20 @@ ADD php.ini /usr/local/etc/php/php.ini
 # Set dynamic memory limit
 ENV phpmemory_limit=128M
 RUN sed -i 's/memory_limit = .*/memory_limit = ${phpmemory_limit}/' /usr/local/etc/php/php.ini
+
+RUN apt-get update && apt-get install -y git
+# Authorize SSH Host
+RUN mkdir -p /root/.ssh && \
+    chmod 0700 /root/.ssh && \
+    ssh-keyscan github.com > /root/.ssh/known_hosts
+
+ENV APACHE_DOCUMENT_ROOT=/var/www/html/www
+RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
+
+RUN apt-get install -y locales locales-all
+ENV LC_ALL=en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US.UTF-8
+
+RUN echo "TimeOut 1800" > /etc/apache2/conf-available/timeout.conf && \
+    a2enconf timeout
