@@ -1,0 +1,85 @@
+name: Build PHP 7.4 (CVE-2026-109618/109619 backport)
+
+on:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: Push to Docker Hub after the smoke tests pass
+        type: boolean
+        default: false
+      extra_tag:
+        description: Extra dated tag, e.g. 7.4-20261022-cve
+        type: string
+        default: ''
+
+env:
+  IMAGE: jeroenkodikas/legalthings-apache-php
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: 7.4/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: legalthings-apache-php:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke tests
+        run: |
+          set -eux
+          run() { docker run --rm --platform linux/amd64 legalthings-apache-php:ci "$@"; }
+
+          run php -v | grep -F 'PHP 7.4.33'
+          mods="$(run php -m)"
+          for m in mongodb yaml base58 gd intl zip bcmath gettext sodium; do
+            echo "$mods" | grep -ix "$m"
+          done
+
+          # patch marker: ini setting added by the backport (stock 7.4.33 prints bool(false))
+          test "$(run php -r 'echo var_export(ini_get("max_multipart_body_parts"), true);')" = "'-1'"
+
+          run test -f /usr/local/etc/php/conf.d/zz-security-php2shell.ini
+          run grep -F '7.4.33 + CVE-2026-109618' /usr/local/etc/php/PATCHES
+          run grep '^!mozilla/emSign_ECC_Root_CA_-_G3' /etc/ca-certificates.conf
+          run apache2ctl -t
+
+          # Through Apache: upload progress off, OOM in one request must not break the next
+          docker run -d --name t --platform linux/amd64 -p 8080:80 legalthings-apache-php:ci
+          docker exec t sh -c '
+            mkdir -p /var/www/html/www
+            echo "<?php echo var_export(ini_get(\"session.upload_progress.enabled\"), true);" > /var/www/html/www/probe.php
+            echo "<?php ini_set(\"memory_limit\",\"16M\"); \$a=[]; while(true){\$a[]=str_repeat(\"x\",1048576);}" > /var/www/html/www/oom.php
+            echo "<?php echo \"ok\";" > /var/www/html/www/ok.php'
+          sleep 3
+          test "$(curl -fsS localhost:8080/probe.php)" = "'0'" || test "$(curl -fsS localhost:8080/probe.php)" = "''"
+          for i in 1 2 3 4 5 6; do curl -sS -o /dev/null localhost:8080/oom.php || true; done
+          for i in 1 2 3 4 5 6; do test "$(curl -fsS localhost:8080/ok.php)" = "ok"; done
+          docker rm -f t
+
+      - name: Log in to Docker Hub
+        if: inputs.push
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push
+        if: inputs.push
+        run: |
+          set -eux
+          tags="7.4 latest prod"
+          if [ -n "${{ inputs.extra_tag }}" ]; then tags="$tags ${{ inputs.extra_tag }}"; fi
+          for t in $tags; do
+            docker tag legalthings-apache-php:ci "$IMAGE:$t"
+            docker push "$IMAGE:$t"
+          done
