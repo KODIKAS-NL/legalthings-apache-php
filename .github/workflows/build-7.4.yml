@@ -54,8 +54,8 @@ jobs:
           run apache2ctl -t
 
           # Through Apache: upload progress off, OOM in one request must not break the next
-          docker run -d --name t --platform linux/amd64 -p 8080:80 legalthings-apache-php:ci
-          docker exec t sh -c '
+          docker run -d --name phptest --platform linux/amd64 -p 8080:80 legalthings-apache-php:ci
+          docker exec phptest sh -c '
             mkdir -p /var/www/html/www
             echo "<?php echo var_export(ini_get(\"session.upload_progress.enabled\"), true);" > /var/www/html/www/probe.php
             echo "<?php ini_set(\"memory_limit\",\"16M\"); \$a=[]; while(true){\$a[]=str_repeat(\"x\",1048576);}" > /var/www/html/www/oom.php
@@ -64,7 +64,7 @@ jobs:
           test "$(curl -fsS localhost:8080/probe.php)" = "'0'" || test "$(curl -fsS localhost:8080/probe.php)" = "''"
           for i in 1 2 3 4 5 6; do curl -sS -o /dev/null localhost:8080/oom.php || true; done
           for i in 1 2 3 4 5 6; do test "$(curl -fsS localhost:8080/ok.php)" = "ok"; done
-          docker rm -f t
+          docker rm -f phptest
 
       - name: Log in to Docker Hub
         if: inputs.push
